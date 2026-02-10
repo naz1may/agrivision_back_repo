@@ -5,7 +5,7 @@ from flask_restful import Api
 from flask_cors import CORS
 from models import db
 from flask_jwt_extended import JWTManager
-
+from datetime import timedelta
 
 # Импорт ресурсов
 from resources.user import UserRegister, UserProfile, UserHistory, UserLogin
@@ -22,6 +22,9 @@ CORS(app)
 # 2. Конфигурация
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'fallback-secret-key')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Настройки времени жизни токена
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=10)
+
 
 # Настройка путей
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))

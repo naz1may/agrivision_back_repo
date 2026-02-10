@@ -8,13 +8,10 @@ from translations import MESSAGES
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from predictor import PlantPredictor
 
-
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
-
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 class AnalysisUpload(Resource):
     @jwt_required()
@@ -42,8 +39,9 @@ class AnalysisUpload(Resource):
         full_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
         file.save(full_path)
 
-        # 2. Логика БД с защитой от сбоев
+        # 2. Логика БД и ИИ с защитой от сбоев
         try:
+            # Предварительное создание записи анализа
             new_analysis = Analysis(user_id=user_id, status='completed')
             db.session.add(new_analysis)
             db.session.flush()
@@ -51,24 +49,28 @@ class AnalysisUpload(Resource):
             new_image = AnalysisImage(analysis_id=new_analysis.id, image_url=relative_path)
             db.session.add(new_image)
 
-            # 3. Интеграция с ИИ-модулем
-            # Вызываем предсказание для сохраненного файла
+            # --- ВНЕДРЕННЫЙ БЛОК ИИ ---
+            # Вызываем предсказание (теперь через обертку predictor.py)
             prediction = PlantPredictor.predict(full_path)
 
-            ai_label = prediction["label"]
-            ai_confidence = prediction["confidence"]
-            visual_status = prediction["visual_status"]
+            # Безопасно извлекаем данные с дефолтными значениями
+            ai_label = prediction.get("label", "unknown")
+            ai_confidence = float(prediction.get("confidence", 0.0))
+            visual_status = prediction.get("visual_status", "healthy")
 
-            # Подтягиваем перевод из словаря
-            translation = MESSAGES.get(ai_label, MESSAGES.get("unknown"))[lang]
+            # Подтягиваем перевод из словаря MESSAGES
+            # Если ИИ выдал метку, которой нет в словаре, берем "unknown"
+            translation_data = MESSAGES.get(ai_label, MESSAGES.get("unknown"))
+            translation = translation_data[lang]
+            # --------------------------
 
             new_result = AnalysisResult(
                 analysis_id=new_analysis.id,
                 visual_status=visual_status,
                 label=ai_label,
                 confidence=ai_confidence,
-                symptom_description=translation["symptom"],
-                recommendation=translation["rec"]
+                symptom_description=translation.get("symptom", ""),
+                recommendation=translation.get("rec", "")
             )
             db.session.add(new_result)
             db.session.commit()
@@ -77,10 +79,10 @@ class AnalysisUpload(Resource):
             db.session.rollback()
             if os.path.exists(full_path):
                 os.remove(full_path)
-            current_app.logger.error(f"Database Save Error: {e}")
-            abort(500, message="Техническая ошибка при сохранении анализа.")
+            current_app.logger.error(f"Analysis Integration Error: {e}")
+            abort(500, message=f"Техническая ошибка при анализе: {str(e)}")
 
-        # 4. Формирование ответа
+        # 3. Формирование ответа
         base_url = request.host_url.rstrip('/')
         full_image_url = f"{base_url}/{relative_path}"
 
@@ -90,10 +92,10 @@ class AnalysisUpload(Resource):
             "visual_status": visual_status,
             "label": ai_label,
             "confidence": f"{ai_confidence * 100:.2f}%",
-            "status_text": translation["status"],
-            "diagnosis_text": translation["diagnosis"],
-            "symptom_description": translation["symptom"],
-            "recommendation": translation["rec"],
+            "status_text": translation.get("status", ""),
+            "diagnosis_text": translation.get("diagnosis", ""),
+            "symptom_description": translation.get("symptom", ""),
+            "recommendation": translation.get("rec", ""),
             "image_url": full_image_url,
             "created_at": new_analysis.created_at.strftime("%Y-%m-%d %H:%M")
         }, 201

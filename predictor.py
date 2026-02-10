@@ -1,33 +1,31 @@
-import random
-from translations import MESSAGES
+import os
+import shutil
+from predict import analyze
 
 
 class PlantPredictor:
     @staticmethod
     def predict(image_path):
-        """
-        Имитация работы нейросети.
-        В будущем здесь будет загрузка модели (TensorFlow/PyTorch)
-        и классификация изображения по пути image_path.
-        """
-        # Список возможных диагнозов из твоих MESSAGES
-        possible_labels = [
-            "healthy", "scab", "scab frog_eye_leaf_spot",
-            "scab frog_eye_leaf_spot complex", "rust",
-            "rust frog_eye_leaf_spot", "rust complex",
-            "frog_eye_leaf_spot", "frog_eye_leaf_spot complex",
-            "powdery_mildew", "powdery_mildew complex", "complex"
-        ]
+        # 1. Создаем временную папку для ИИ, если её нет
+        temp_ai_dir = 'temp_ai_analysis'
+        if os.path.exists(temp_ai_dir):
+            shutil.rmtree(temp_ai_dir)  # Очищаем старое
+        os.makedirs(temp_ai_dir)
 
-        # Имитируем случайный выбор диагноза и уверенность ИИ
-        label = random.choice(possible_labels)
-        confidence = round(random.uniform(0.85, 0.99), 4)
+        # 2. Копируем туда наше загруженное фото
+        filename = os.path.basename(image_path)
+        temp_image_path = os.path.join(temp_ai_dir, filename)
+        shutil.copy(image_path, temp_image_path)
 
-        # Определяем технический статус
-        visual_status = "healthy" if label == "healthy" else "diseased"
+        try:
+            # 3. Передаем ПАПКУ функции коллеги
+            results = analyze(temp_ai_dir)
 
-        return {
-            "label": label,
-            "confidence": confidence,
-            "visual_status": visual_status
-        }
+            if not results:
+                return {"label": "unknown", "confidence": 0.0, "visual_status": "error"}
+
+            return results[0]
+        finally:
+            # 4. Удаляем временную папку после анализа
+            if os.path.exists(temp_ai_dir):
+                shutil.rmtree(temp_ai_dir)
